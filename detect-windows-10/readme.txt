@@ -1,0 +1,1 @@
+A quick and dirty way to detect Windows 10 using FreePascal.
