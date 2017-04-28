@@ -2,55 +2,64 @@ unit whois;
 {$ifdef fpc}{$mode objfpc}{$H+}{$endif}
 interface
 
-uses Classes, SysUtils, Types, StrUtils, explodefunc, blcksock;
+uses Classes, SysUtils, Types, StrUtils, blcksock;
 
-function Whois(host: String): String;
+function LookupWhois(host: String): String;
 
 implementation
 
-function Whois(host: String): String;
+function LookupWhois(host: String): String;
 var
   b: TTCPBlockSocket;
-  response: TStrings;
-  rparts: TArray;
+  rparts: TStrings;
   refer: String;
   i: Integer;
+  response: TStringStream;
+  rlines: TStrings;
 begin
   refer := '';
   // First connect to whois.iana.org and find the whois server for the domain
   b := TTCPBlockSocket.Create;
-  response := TStringList.Create;
+  response := TStringStream.Create('');
   b.Connect(b.ResolveName('whois.iana.org'),'43');
   b.SendString(host + #13#10);
-  response.Text := b.RecvPacket(60000);
+  b.RecvStreamRaw(response,60000);
   b.CloseSocket;
   b.Free;
   // Find the refer: line
-  for i := 0 to response.Count -1 do
+  rlines := TStringList.Create;
+  rlines.Text := response.DataString;
+  for i := 0 to rlines.Count -1 do
   begin
-    if AnsiPos('refer:',response[i]) > 0 then
+    if AnsiPos('refer:',rlines[i]) > 0 then
     begin
-      rparts := explode(':',response[i],0);
+      rparts := TStringList.Create;
+      ExtractStrings([':'], [], PChar(rlines[i]), rparts);
       refer := trim(rparts[1]);
+      rparts.Free;
       break;
     end;
   end;
+  rlines.Free;
   if Length(refer) < 1 then Result := 'Could not lookup whois for ' + host
   else
   begin
     // Now we connect to the referred server
     b := TTCPBlockSocket.Create;
+    b.ConvertLineEnd := false;
     b.Connect(b.ResolveName(refer),'43');
     // .com and .net are handled differently
     if (AnsiEndsStr('.com',host)) or (AnsiEndsStr('.net',host)) then
       b.SendString('domain ' + host + #13#10)
     else
       b.SendString(host + #13#10);
-    response.Clear;
-    response.Text := b.RecvPacket(60000);
-    Result := response.Text;
+    response := TStringStream.Create('');
+    b.RecvStreamRaw(response,60000);
+    Result := response.DataString;
     response.Free;
   end;
+  b.CloseSocket;
+  b.Free;
 end;
 
 end.
